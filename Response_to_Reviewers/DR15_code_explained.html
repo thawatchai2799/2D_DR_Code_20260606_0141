@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DR Code — Companion Code Explained (DR15.py)</title>
+<style>
+  :root{--ink:#1a2230;--muted:#5b6677;--line:#e2e6ec;--bg:#f6f8fa;--accent:#2f5fb3;--code-bg:#1f2733;--code-ink:#e7edf5;}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:var(--ink);line-height:1.62;background:#fff}
+  .wrap{max-width:860px;margin:0 auto;padding:54px 26px 90px}
+  header.top{border-bottom:3px solid var(--accent);padding-bottom:20px;margin-bottom:8px}
+  .kicker{font-size:12.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);font-weight:700}
+  h1{font-size:30px;line-height:1.2;margin:.32em 0 .15em}
+  .sub{color:var(--muted);font-size:15.5px;margin:0}
+  h2{font-size:21px;margin:46px 0 6px;padding-top:14px;border-top:1px solid var(--line)}
+  h3{font-size:17px;margin:26px 0 6px;display:flex;align-items:center;gap:11px}
+  .num{display:inline-flex;align-items:center;justify-content:center;width:27px;height:27px;border-radius:50%;background:var(--accent);color:#fff;font-size:14px;font-weight:700;flex:none}
+  p{margin:.5em 0}
+  code{font-family:"SF Mono",Menlo,Consolas,monospace;font-size:13px;background:#eef1f5;padding:1px 5px;border-radius:4px;color:#243}
+  pre{background:var(--code-bg);color:var(--code-ink);padding:16px 18px;border-radius:10px;overflow:auto;font-size:12.6px;line-height:1.5;border:1px solid #2c3a4b}
+  pre code{background:none;padding:0;color:inherit;font-size:12.6px}
+  .step{background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:6px 20px 18px;margin:18px 0}
+  .callout{background:#eef4ff;border-left:4px solid var(--accent);padding:13px 18px;border-radius:0 8px 8px 0;margin:16px 0}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:14px 0}
+  .card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:13px 15px}
+  .card b{display:block;font-size:22px;color:var(--accent)}
+  .card span{font-size:13px;color:var(--muted)}
+  footer{margin-top:50px;padding-top:18px;border-top:1px solid var(--line);color:var(--muted);font-size:13px}
+  .run{font-family:"SF Mono",Menlo,Consolas,monospace;font-size:12.6px}
+  a{color:var(--accent)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="kicker">Companion code &middot; Reproducibility package</div>
+    <h1>Enumerating &amp; Verifying Recoverable DR&nbsp;Code Templates</h1>
+    <p class="sub">A plain-language walkthrough of <code>DR15.py</code> and <code>verify_2d_group.py</code>, the open-source programs accompanying<br><em>&ldquo;On the Equivalence Classes of Recoverable Patterns in DR Code: A Group-Theoretic Analysis with Applications to Storage Optimization&rdquo;</em> (Symmetry, MDPI).</p>
+  </header>
+
+  <div class="grid">
+    <div class="card"><b>2,592</b><span>recoverable 3&times;3 templates (exhaustive)</span></div>
+    <div class="card"><b>72</b><span>order of the symmetry group G</span></div>
+    <div class="card"><b>36</b><span>absolute equivalence classes</span></div>
+    <div class="card"><b>0</b><span>external dependencies &mdash; pure Python</span></div>
+  </div>
+
+  <div class="callout">
+    <strong>What these programs prove.</strong> <code>DR15.py</code> certifies by complete search that exactly <strong>2,592</strong> of the 9! block arrangements are recoverable, cross-checks that figure against a closed-form count, and demonstrates the recovery procedure on a real template. <code>verify_2d_group.py</code> builds the symmetry group from its five generators and confirms it is the <strong>semi-direct product (C&#8323; &times; C&#8323;) &#8906; D&#8324;</strong> of order 72 &mdash; not the direct product originally claimed.
+  </div>
+
+  <h2>How to run</h2>
+  <p>No installation is required (Python&nbsp;3.6+). From a terminal:</p>
+  <pre><code>python DR15.py            # prints 2592, the analytical cross-check, and a recovery demo
+python verify_2d_group.py # builds G and confirms (C3 x C3) &#8906; D4, |G| = 72</code></pre>
+  <p><code>DR15.py</code> also writes every recoverable template to <code>DR_Code.txt</code> for independent inspection.</p>
+
+  <h2>The idea in one paragraph</h2>
+  <p>A DR Code payload is split into data blocks A0&ndash;A2 and B0&ndash;B2, with parity blocks Ci = Ai&nbsp;&oplus;&nbsp;Bi. The three blocks sharing a subscript form a <strong>recovery group</strong> (a RAID-5 triple: any one is the XOR of the other two). A 3&times;3 placement survives the loss of any single row or column <em>if and only if</em> every row and every column contains one block from each recovery group &mdash; i.e. the three subscripts on every line are distinct. The decisive point, corrected in this revision, is that recovery is governed by the <strong>index</strong>, not the role letter A/B/C.</p>
+
+  <h2>Walkthrough of <code>DR15.py</code></h2>
+  
+    <div class="step">
+      <h3><span class="num">1</span>Header &amp; data model</h3>
+      <p>The script is pure standard-library Python (only <code>itertools</code>), so a reviewer can run it on any machine with no installation. The header states the data model: a payload is split into six data blocks A0–A2 and B0–B2, and three parity blocks are derived index-wise by <code>Ci = Ai XOR Bi</code>. The three blocks sharing an index form a <strong>recovery group</strong> Gi = {Ai, Bi, Ci} — a RAID-5 triple in which any one block is the XOR of the other two.</p>
+      <pre><code>#!/usr/bin/env python3
+# DR15.py - enumerator and verifier for recoverable 2D DR Code templates.
+# Companion code for &quot;On the Equivalence Classes of Recoverable Patterns in DR Code&quot;.
+# Pure standard library; runs on Windows, Linux, and macOS.
+#
+# Data model (Section 3).
+#   A payload is split into six data blocks A0,A1,A2 (first half) and
+#   B0,B1,B2 (second half).  Three parity blocks are derived index-wise by
+#       Ci = Ai XOR Bi,   i = 0,1,2.
+#   The three blocks that share an index form a RECOVERY GROUP
+#       G0 = {A0,B0,C0},  G1 = {A1,B1,C1},  G2 = {A2,B2,C2},
+#   a RAID-5 triple in which any block equals the XOR of the other two.
+#
+# Definition 1 (Recoverability).
+#   A 3x3 placement of the nine blocks is recoverable iff every row and every
+#   column contains exactly one block from each recovery group -- equivalently,
+#   the three recovery-group indices in each line are pairwise distinct.
+#   (It is the index that matters for recovery, NOT the role letter A/B/C.)</code></pre>
+    </div>
+    <div class="step">
+      <h3><span class="num">2</span>Blocks and recovery index</h3>
+      <p>Each of the nine blocks is encoded as a <code>(role, index)</code> pair (role 0/1/2 = A/B/C; index 0/1/2). The function <code>group_index</code> returns the subscript — and this is the crucial modelling decision: <strong>recovery depends on the index, not the role letter</strong>. This is the corrected definition that resolves Reviewer 3's request to define recovery rigorously.</p>
+      <pre><code>from itertools import permutations
+
+# Each block is (role, index): role 0,1,2 = A,B,C ; index 0,1,2.
+BLOCKS = [(role, idx) for role in range(3) for idx in range(3)]
+ROLE = &quot;ABC&quot;
+
+
+def name(block):
+    role, idx = block
+    return f&quot;{ROLE[role]}{idx}&quot;
+
+
+def group_index(block):
+    &quot;&quot;&quot;Recovery-group index of a block (the subscript). This is what governs recovery.&quot;&quot;&quot;
+    return block[1]</code></pre>
+    </div>
+    <div class="step">
+      <h3><span class="num">3</span>The six lines and the recoverability test</h3>
+      <p>A 3×3 grid is laid out as a flat list of nine cells; the six “lines” are the three rows plus three columns. <code>is_recoverable</code> implements <strong>Definition 1</strong>: a placement is recoverable iff every line contains three <em>distinct</em> recovery-group indices. If a line had two blocks of the same group, destroying that line would erase two members of one group and recovery by XOR would be impossible.</p>
+      <pre><code># Grid cell (r, c) holds placement[3 * r + c]. The six lines are the 3 rows + 3 cols.
+ROWS = [[3 * r + c for c in range(3)] for r in range(3)]
+COLS = [[3 * r + c for r in range(3)] for c in range(3)]
+LINES = ROWS + COLS
+
+
+def is_recoverable(placement):
+    &quot;&quot;&quot;True iff every line carries one block of each recovery group (Definition 1).&quot;&quot;&quot;
+    for line in LINES:
+        if len({group_index(placement[k]) for k in line}) != 3:
+            return False
+    return True</code></pre>
+    </div>
+    <div class="step">
+      <h3><span class="num">4</span>Exhaustive enumeration (Theorem 1)</h3>
+      <p><code>enumerate_recoverable</code> simply filters all 9! = 362,880 permutations of the nine blocks through the recoverability test. This is the brute-force certificate behind the headline count of 2,592. The exhaustiveness is what makes the result a proof by complete search rather than a sample.</p>
+      <pre><code>def enumerate_recoverable():
+    &quot;&quot;&quot;Return the list of all recoverable placements among the 9! arrangements.&quot;&quot;&quot;
+    return [p for p in permutations(BLOCKS) if is_recoverable(p)]</code></pre>
+    </div>
+    <div class="step">
+      <h3><span class="num">5</span>Recovery Theorem demonstration</h3>
+      <p><code>recover_strip</code> shows constructively that a destroyed row or column can always be rebuilt: for each erased cell it locates the two surviving members of that block's recovery group and notes that their XOR restores the lost block. The assertion <code>len(mates) == 2</code> is the executable form of the sufficiency proof.</p>
+      <pre><code>def recover_strip(placement, line):
+    &quot;&quot;&quot;Demonstrate the Recovery Theorem: rebuild a lost row/column by index-wise XOR.
+
+    Returns, for each erased cell, the (block, two surviving group-mates) used.
+    Works because a recoverable line holds one block of each group, so every
+    group keeps two of its three members -- enough to XOR back the third.
+    &quot;&quot;&quot;
+    lost = set(line)
+    steps = []
+    for k in line:
+        idx = group_index(placement[k])
+        mates = [placement[j] for j in range(9)
+                 if j not in lost and group_index(placement[j]) == idx]
+        assert len(mates) == 2, &quot;unrecoverable: group-mate missing&quot;
+        steps.append((name(placement[k]), name(mates[0]), name(mates[1])))
+    return steps</code></pre>
+    </div>
+    <div class="step">
+      <h3><span class="num">6</span>Driver: results, analytical cross-check, and recovery demo</h3>
+      <p><code>main</code> prints the enumerated count, cross-checks it against the analytical formula <code>12 × (3!)³</code> (12 = the number of order-3 Latin squares, OEIS A002860), runs a live recovery demonstration on the original 2013 Sriphum template, and writes all 2,592 templates to <code>DR_Code.txt</code> for independent inspection. The two independent routes to 2,592 (exhaustive search and closed-form) corroborate each other.</p>
+      <pre><code>def show(placement):
+    return &quot;\n&quot;.join(&quot; &quot;.join(name(placement[3 * r + c]) for c in range(3))
+                      for r in range(3))
+
+
+def main():
+    templates = enumerate_recoverable()
+    n = len(templates)
+
+    # Headline result (Theorem 1).
+    print(f&quot;Recoverable DR Code templates: {n}&quot;)
+
+    # Analytical cross-check (Theorem 1 proof): 12 order-3 Latin squares x (3!)^3.
+    print(f&quot;Analytical 12 x (3!)^3        : {12 * (6 ** 3)}&quot;)
+    assert n == 12 * (6 ** 3) == 2592
+
+    # Recovery Theorem demo on the original Sriphum template: A0 B2 C1 / A1 B0 C2 / A2 B1 C0.
+    original = ((0, 0), (1, 2), (2, 1),
+                (0, 1), (1, 0), (2, 2),
+                (0, 2), (1, 1), (2, 0))
+    assert is_recoverable(original)
+    print(&quot;\nOriginal template (Sriphum 2013):&quot;)
+    print(show(original))
+    print(&quot;Recovering the lost bottom row {A2, B1, C0} by index-wise XOR:&quot;)
+    for blk, m1, m2 in recover_strip(original, ROWS[2]):
+        print(f&quot;  {blk} = {m1} XOR {m2}&quot;)
+
+    # Save the full enumeration (one template per record).
+    with open(&quot;DR_Code.txt&quot;, &quot;w&quot;) as f:
+        for i, p in enumerate(templates, 1):
+            f.write(show(p) + f&quot;\ncount={i}\n&quot;)
+    print(f&quot;\nWrote {n} templates to DR_Code.txt&quot;)
+
+
+if __name__ == &quot;__main__&quot;:
+    main()</code></pre>
+    </div>
+
+  <h2>Expected output</h2>
+  <pre class="run"><code>Recoverable DR Code templates: 2592
+Analytical 12 x (3!)^3        : 2592
+
+Original template (Sriphum 2013):
+A0 B2 C1
+A1 B0 C2
+A2 B1 C0
+Recovering the lost bottom row {A2, B1, C0} by index-wise XOR:
+  A2 = B2 XOR C2
+  B1 = C1 XOR A1
+  C0 = A0 XOR B0
+
+Wrote 2592 templates to DR_Code.txt</code></pre>
+
+  <h2>The group verifier <code>verify_2d_group.py</code></h2>
+  <p>This second program is independent of any algebra in the paper: it constructs the five generating transformations (mirror, flip, 90&deg; rotation, row-cycle, column-cycle) as concrete permutations of the nine cells, closes them under composition by breadth-first search, and inspects the resulting group. It establishes, computationally, that</p>
+  <ul>
+    <li>the closure has exactly <strong>72</strong> elements;</li>
+    <li>N = C&#8323;&times;C&#8323; (the row/column cyclic shifts) is a <strong>normal</strong> subgroup, while D&#8324; is not;</li>
+    <li>D&#8324; &cap; N = {e} and N&middot;D&#8324; = G, so G is an internal semi-direct product;</li>
+    <li>a 90&deg; rotation <strong>conjugates</strong> the row-shift into the column-shift, so the factors do <em>not</em> commute &mdash; refuting the direct product and confirming <strong>G &cong; (C&#8323;&times;C&#8323;) &#8906; D&#8324;</strong>;</li>
+    <li>the structure map &phi;: D&#8324; &rarr; GL(2,&#120125;&#8323;) is faithful (trivial kernel).</li>
+  </ul>
+  <p>Because both candidate groups have order 72, every orbit count in the paper (36 classes under G, 324 under D&#8324;) is unaffected; only the structural description changes.</p>
+  <details>
+    <summary style="cursor:pointer;color:var(--accent);font-weight:600;margin:10px 0">Show full source of verify_2d_group.py</summary>
+    <pre><code>#!/usr/bin/env python3
+&quot;&quot;&quot;
+verify_2d_group.py
+==================================================================
+Verification of the symmetry-group structure of the 2D (3x3) DR Code.
+
+Goal: settle the reviewers&#x27; point that the closure of the five
+generators is NOT the direct product D4 x C3 x C3, but the
+semi-direct product  (C3 x C3) ⋊ D4  of the SAME order 72.
+
+Method
+------
+* The 3x3 grid has 9 cells. Cell (x,y) with x = column in {0,1,2},
+  y = row in {0,1,2} is given the linear index  idx = 3*y + x.
+* Each geometric / combinatorial operation is realised as a
+  permutation of the 9 cell-indices (an element of S9).  Acting on
+  cells is equivalent to acting on templates (a template is a
+  bijection cells -&gt; blocks), so the group generated inside S9 is
+  isomorphic to the group G acting on the 2,592 templates.
+* We build the closure by BFS, then test the subgroup lattice:
+  normality, intersection, product cover, and (critically) whether
+  the two C3 factors are fixed (direct product) or permuted/inverted
+  (semi-direct product) by D4.
+
+No third-party libraries; pure standard library.
+==================================================================
+&quot;&quot;&quot;
+
+from itertools import product
+from collections import deque
+
+# ---------- permutation helpers (functions on {0,...,8}) ----------
+
+N = 9
+ID = tuple(range(N))
+
+def compose(p, q):
+    &quot;&quot;&quot;Return p∘q : first apply q, then p.  (p∘q)(i) = p[q[i]].&quot;&quot;&quot;
+    return tuple(p[q[i]] for i in range(N))
+
+def inverse(p):
+    inv = [0] * N
+    for i, pi in enumerate(p):
+        inv[pi] = i
+    return tuple(inv)
+
+def order(p):
+    o, cur = 1, p
+    while cur != ID:
+        cur = compose(p, cur)
+        o += 1
+    return o
+
+# ---------- build generators from geometric maps on (x,y) ----------
+
+def cell(x, y):
+    return 3 * y + x
+
+def perm_from_map(f):
+    &quot;&quot;&quot;f maps (x,y) -&gt; (x&#x27;,y&#x27;); return the induced permutation of indices.&quot;&quot;&quot;
+    p = [0] * N
+    for x, y in product(range(3), range(3)):
+        nx, ny = f(x, y)
+        p[cell(x, y)] = cell(nx, ny)
+    return tuple(p)
+
+# Geometric symmetries of the square grid (D4)
+MIRROR = perm_from_map(lambda x, y: (2 - x, y))        # left &lt;-&gt; right
+FLIP   = perm_from_map(lambda x, y: (x, 2 - y))        # top  &lt;-&gt; bottom
+ROT90  = perm_from_map(lambda x, y: (2 - y, x))        # 90 deg clockwise
+
+# Combinatorial (cyclic) symmetries unique to the recoverability constraint
+SHIFT_ROW = perm_from_map(lambda x, y: (x, (y + 1) % 3))   # rows shift down
+SHIFT_COL = perm_from_map(lambda x, y: ((x + 1) % 3, y))   # cols shift right
+
+GENS = {
+    &quot;Mirror   (σ_M)&quot;: MIRROR,
+    &quot;Flip     (σ_F)&quot;: FLIP,
+    &quot;Rot90    (σ_R)&quot;: ROT90,
+    &quot;ShiftRow (σ_W)&quot;: SHIFT_ROW,
+    &quot;ShiftCol (σ_C)&quot;: SHIFT_COL,
+}
+
+# ---------- generic closure (BFS) ----------
+
+def closure(generators):
+    gens = list(generators)
+    seen = {ID}
+    frontier = deque([ID])
+    while frontier:
+        g = frontier.popleft()
+        for s in gens:
+            h = compose(s, g)
+            if h not in seen:
+                seen.add(h)
+                frontier.append(h)
+    return seen
+
+def is_subgroup_closed(elements):
+    s = set(elements)
+    for a in s:
+        for b in s:
+            if compose(a, b) not in s:
+                return False
+    return True
+
+def is_normal(H, G):
+    &quot;&quot;&quot;Is subgroup H normal in G?  (g h g^-1 in H for all g in G, h in H)&quot;&quot;&quot;
+    for g in G:
+        gi = inverse(g)
+        for h in H:
+            if compose(compose(g, h), gi) not in H:
+                return False
+    return True
+
+# ==================================================================
+print(&quot;=&quot; * 66)
+print(&quot; 2D DR Code — symmetry group structure verification&quot;)
+print(&quot;=&quot; * 66)
+
+# sanity: generator orders
+print(&quot;\n[1] Generator orders&quot;)
+for name, p in GENS.items():
+    print(f&quot;    {name:16s} order = {order(p)}&quot;)
+
+# full group
+G = closure(GENS.values())
+print(f&quot;\n[2] |G| = {len(G)}   (closure of all five generators)&quot;)
+assert len(G) == 72, &quot;expected |G| = 72&quot;
+
+# D4 subgroup
+D4 = closure([MIRROR, FLIP, ROT90])
+print(f&quot;[3] |D4| = |&lt;Mirror,Flip,Rot90&gt;| = {len(D4)}&quot;)
+assert len(D4) == 8
+assert is_subgroup_closed(D4)
+
+# N = C3 x C3 subgroup (row &amp; column cyclic shifts)
+Ncyc = closure([SHIFT_ROW, SHIFT_COL])
+print(f&quot;[4] |N| = |&lt;ShiftRow,ShiftCol&gt;| = {len(Ncyc)}  (should be 9 = C3xC3)&quot;)
+assert len(Ncyc) == 9
+assert is_subgroup_closed(Ncyc)
+# confirm N is abelian and ≅ C3 x C3 (every non-id elt has order 3)
+assert all(order(g) in (1, 3) for g in Ncyc)
+assert all(compose(a, b) == compose(b, a) for a in Ncyc for b in Ncyc)
+print(&quot;      N is abelian, every non-identity element has order 3  -&gt; C3 x C3&quot;)
+
+# ---------- the decisive tests ----------
+print(&quot;\n[5] Normality&quot;)
+N_normal  = is_normal(Ncyc, G)
+D4_normal = is_normal(D4, G)
+print(f&quot;    N  = C3xC3 normal in G ?  {N_normal}&quot;)
+print(f&quot;    D4         normal in G ?  {D4_normal}&quot;)
+assert N_normal is True
+assert D4_normal is False
+
+print(&quot;\n[6] Intersection and product cover&quot;)
+inter = D4 &amp; Ncyc
+print(f&quot;    D4 ∩ N = {{e}} ?  {inter == {ID}}   (|intersection| = {len(inter)})&quot;)
+prod = {compose(n, d) for n in Ncyc for d in D4}
+print(f&quot;    N · D4 = G ?      {prod == G}   (|N·D4| = {len(prod)} = |N|·|D4| = {len(Ncyc)*len(D4)})&quot;)
+assert inter == {ID}
+assert prod == G
+assert len(Ncyc) * len(D4) == len(G)
+
+# ---------- direct vs semi-direct: does D4 act trivially on N? ----------
+print(&quot;\n[7] Does D4 act trivially on N?  (direct product test)&quot;)
+# Direct product  &lt;=&gt;  every element of D4 commutes with every element of N.
+commutes_all = all(compose(d, n) == compose(n, d) for d in D4 for n in Ncyc)
+print(f&quot;    [D4, N] = 1 (all commute) ?  {commutes_all}&quot;)
+assert commutes_all is False, &quot;if this were True the product would be direct&quot;
+
+# the explicit witnessing relation the reviewers point to
+lhs = compose(compose(ROT90, SHIFT_ROW), inverse(ROT90))   # R · W · R^-1
+print(&quot;\n[8] Explicit conjugation witness  Rot90 · ShiftRow · Rot90⁻¹ :&quot;)
+print(f&quot;    equals ShiftCol      ?  {lhs == SHIFT_COL}&quot;)
+print(f&quot;    equals ShiftCol⁻¹    ?  {lhs == inverse(SHIFT_COL)}&quot;)
+print(f&quot;    equals ShiftRow      ?  {lhs == SHIFT_ROW}   (would-be direct-product behaviour)&quot;)
+# rotation by 90 deg swaps the row-shift and column-shift directions:
+assert lhs in (SHIFT_COL, inverse(SHIFT_COL))
+assert lhs != SHIFT_ROW
+
+# show the swap-and-invert action of the 90-degree rotation on the C3 generators
+print(&quot;\n[9] Action of Rot90 (conjugation) on the two C3 generators:&quot;)
+def name_in_N(p):
+    table = {
+        SHIFT_ROW: &quot;σ_W  (ShiftRow)&quot;,
+        inverse(SHIFT_ROW): &quot;σ_W⁻¹&quot;,
+        SHIFT_COL: &quot;σ_C  (ShiftCol)&quot;,
+        inverse(SHIFT_COL): &quot;σ_C⁻¹&quot;,
+        ID: &quot;e&quot;,
+    }
+    return table.get(p, &quot;other elt of N&quot;)
+for gen, nm in ((SHIFT_ROW, &quot;σ_W&quot;), (SHIFT_COL, &quot;σ_C&quot;)):
+    conj = compose(compose(ROT90, gen), inverse(ROT90))
+    print(f&quot;    Rot90 · {nm} · Rot90⁻¹  =  {name_in_N(conj)}&quot;)
+
+print(&quot;\n&quot; + &quot;=&quot; * 66)
+print(&quot; CONCLUSION&quot;)
+print(&quot;=&quot; * 66)
+print(&quot;&quot;&quot;    |G| = 72,  N = C3xC3 is normal,  D4 is NOT normal,
+    D4 ∩ N = {e},  N · D4 = G,  and D4 does NOT centralise N
+    (Rot90 conjugates ShiftRow to ShiftCol). Therefore
+
+        G  ≅  (C3 x C3) ⋊ D4        [semi-direct product]
+           ≇  D4 x C3 x C3          [the direct product is REFUTED]
+
+    Both groups have order 72, so all orbit counts (36 under G,
+    324 under D4) are unaffected; only the structural claim changes.&quot;&quot;&quot;)
+print(&quot;=&quot; * 66)
+
+
+# ==================================================================
+# Appendix: the structure homomorphism  φ : D4 -&gt; Aut(C3 x C3)
+# Write N additively as (Z/3)^2 with basis  a = σ_W (row shift),
+# b = σ_C (col shift).  For each D4 generator g we record the matrix
+# (over F3) of  x ↦ g x g^-1  in the (a,b) basis, and confirm the
+# map is an injective homomorphism (faithful action), so D4 embeds
+# in GL(2,3) and the semi-direct product is non-trivial.
+# ==================================================================
+print(&quot;\n[10] Structure map  φ: D4 -&gt; Aut(C3xC3) = GL(2,F3),  basis (a=σ_W, b=σ_C)&quot;)
+
+a, b = SHIFT_ROW, SHIFT_COL
+# express any element of N as a vector (i,j) meaning a^i b^j
+vec_of = {}
+for i in range(3):
+    for j in range(3):
+        el = ID
+        for _ in range(i): el = compose(a, el)
+        for _ in range(j): el = compose(b, el)
+        vec_of[el] = (i, j)
+
+def phi_matrix(g):
+    gi = inverse(g)
+    col_a = vec_of[compose(compose(g, a), gi)]   # image of a
+    col_b = vec_of[compose(compose(g, b), gi)]   # image of b
+    # matrix columns = images of basis vectors
+    return (col_a[0], col_b[0], col_a[1], col_b[1])  # (m00,m01,m10,m11)
+
+for name, g in ((&quot;Mirror σ_M&quot;, MIRROR), (&quot;Flip σ_F&quot;, FLIP), (&quot;Rot90 σ_R&quot;, ROT90)):
+    m00, m01, m10, m11 = phi_matrix(g)
+    print(f&quot;    φ({name:10s}) = [[{m00} {m01}] [{m10} {m11}]]  (mod 3)&quot;)
+
+# faithfulness: only identity of D4 maps to the identity matrix
+ker = [g for g in D4 if phi_matrix(g) == (1, 0, 0, 1)]
+print(f&quot;\n    |ker φ| = {len(ker)}  -&gt; {&#x27;faithful (trivial kernel)&#x27; if ker==[ID] else &#x27;NOT faithful&#x27;}&quot;)
+assert ker == [ID]
+print(&quot;    D4 embeds in Aut(C3xC3); the semi-direct product is non-trivial.&quot;)</code></pre>
+  </details>
+
+  <footer>
+    Companion code for the DR Code group-theory paper. Pure-standard-library Python; released for independent verification. This page is fully self-contained and can be opened in any web browser.
+  </footer>
+</div>
+</body>
+</html>
